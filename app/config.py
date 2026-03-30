@@ -3,20 +3,23 @@ from dotenv import load_dotenv
 
 from pathlib import Path
 
-# Explicitly load .env from the root directory
-env_path = Path(__file__).resolve().parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Try loading from project root first, then app/ folder
+root_env = Path(__file__).resolve().parent.parent / '.env'
+app_env = Path(__file__).resolve().parent / '.env'
 
-# Meta / IG API
-ACCESS_TOKEN = os.getenv("ACCESS_TOKEN", "")
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secure_verify_token")
-IG_USER_ID = os.getenv("IG_USER_ID", "")
-GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v19.0")
+if root_env.exists():
+    load_dotenv(dotenv_path=root_env)
+    env_path = root_env
+else:
+    load_dotenv(dotenv_path=app_env)
+    env_path = app_env
 
-# SaaS / OAuth Credentials
+# SaaS / OAuth Credentials (Loaded from DB per user, but these are for the App itself)
 APP_ID = os.getenv("APP_ID", "")
 APP_SECRET = os.getenv("APP_SECRET", "")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8082/auth/callback")
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "my_secure_verify_token")
+GRAPH_API_VERSION = os.getenv("GRAPH_API_VERSION", "v25.0")
 
 # Debugging
 print(f"DEBUG: Loaded APP_ID: {APP_ID[:5]}... Success: {bool(APP_ID)}")

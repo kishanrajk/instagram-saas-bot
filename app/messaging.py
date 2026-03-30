@@ -7,65 +7,69 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def send_instagram_dm(recipient_id: str, message_text: str, access_token: str) -> bool:
-    """Send a direct message via the Instagram Graph API using a specific user token"""
+def send_instagram_dm(instagram_owner_id: str, recipient_id: str, message_text: str, access_token: str) -> bool:
+    """Send a direct message via the Instagram Graph API using the correct /ig-id/messages endpoint"""
     if not access_token:
         logger.error("No access token provided. Cannot send DM.")
         return False
         
-    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/messages"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{instagram_owner_id}/messages"
     
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
-    
+    headers = {"Content-Type": "application/json"}
     payload = {
         "recipient": {"id": recipient_id},
-        "message": {"text": message_text}
+        "message": {"text": message_text},
+        "access_token": access_token
     }
     
     try:
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
-        logger.info(f"Successfully sent DM to {recipient_id}")
+        logger.info(f"Successfully sent DM from {instagram_owner_id} to {recipient_id}")
         return True
-    except requests.exceptions.HTTPError as err:
-        logger.error(f"HTTP Error failed to send DM: {err.response.text}")
-        return False
     except Exception as e:
-        logger.error(f"Unexpected error sending DM: {e}")
+        logger.error(f"DM Send Failure: {e}")
         return False
 
-def process_comment_for_dm(instagram_owner_id: str, commenter_id: str, username: str, comment_text: str) -> bool:
-    """Check user's specific settings and send DM - TEST VERSION (Captures EVERYTHING)"""
+def process_comment_for_dm(instagram_owner_id: str, commenter_id: str, username: str, comment_text: str, test_mode: bool = False) -> bool:
+    """Production logic for processing leads with keywords and rate limits"""
     
-    # Fetch settings for THIS Instagram account owner
     settings = get_user_settings(instagram_owner_id)
     
-    # FOR TESTING: We will capture the lead even if settings are missing (e.g. Meta Test Data)
+    # Check if this is a synthetic Meta test hit
+    is_meta_test = (commenter_id == "232323232")
+    
     if not settings:
-        logger.info(f"TEST DATA DETECTED for IG owner {instagram_owner_id}. Capturing lead anyway.")
-        # Log in Database with fake 'sent=False' since we have no token
-        log_lead(instagram_owner_id=instagram_owner_id, commenter_id=commenter_id, commenter_username=username, comment_text=comment_text, dm_sent=False)
-        return True
-        
-    access_token = settings['access_token']
-    keywords = settings['keywords']
-    response_message = settings['response_message']
-    
-    # BYPASS KEYWORDS FOR TESTING
-    has_keyword = True # any(k.strip().lower() in comment_text.lower() for k in keywords)
-    
-    if not has_keyword:
-        logger.info(f"Skipping DM for {username}: No keywords found in '{comment_text}'.")
+        if is_meta_test:
+            logger.info("Meta Dashboard Test detected. Logging lead for verification.")
+            log_lead(instagram_owner_id, commenter_id, username, comment_text, dm_sent=False)
+            return True
+        logger.warning(f"No settings for IG owner {instagram_owner_id}. Ignoring.")
         return False
         
-    # Send Message (Only if real data)
-    sent = False
-    if commenter_id != "232323232": # Don't DM the Meta test ID
-        sent = send_instagram_dm(recipient_id=commenter_id, message_text=response_message, access_token=access_token)
+    keywords = settings['keywords']
     
-    # Log in Database
-    log_lead(instagram_owner_id=instagram_owner_id, commenter_id=commenter_id, commenter_username=username, comment_text=comment_text, dm_sent=sent)
+    # 1. Keyword Check
+    has_keyword = any(k.strip().lower() in comment_text.lower() for k in keywords)
+    if not has_keyword and not is_meta_test:
+        logger.info(f"No keywords in '{comment_text}' from @{username}. Skipping.")
+        return False
+        
+    # 2. Rate Limit (24h cooldown)
+    if not is_meta_test and has_been_contacted_recently(instagram_owner_id, commenter_id, hours=24):
+        logger.info(f"Rate limit hit for @{username}. Skipping.")
+        return False
+        
+    # 3. Send DM (Skip if test mode or meta test)
+    sent = False
+    if not test_mode and not is_meta_test:
+        sent = send_instagram_dm(
+            instagram_owner_id=instagram_owner_id,
+            recipient_id=commenter_id,
+            message_text=settings['response_message'],
+            access_token=settings['access_token']
+        )
+    
+    # 4. Log lead
+    log_lead(instagram_owner_id, commenter_id, username, comment_text, dm_sent=sent)
     return sent
