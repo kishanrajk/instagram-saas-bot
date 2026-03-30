@@ -1,0 +1,17 @@
+.env
+*.db
+__pycache__/
+*.pyc
+server.log
+.vscode/
+.idea/
+node_modules/
+dist/
+build/
+.agent/
+.agents/
+_agent/
+_agents/
+brain/
+logs/
+tmp/
